@@ -1,6 +1,7 @@
 module SvgParser exposing
     ( SvgNode(..), Element, SvgAttribute
     , parse, parseToNode, nodeToSvg, toAttribute
+    , parseToNodes
     )
 
 {-| String to SVG parser
@@ -21,6 +22,7 @@ import Combine exposing (..)
 import Combine.Char exposing (anyChar)
 import Html exposing (Html)
 import Svg exposing (Attribute, Svg, node, svg, text)
+import Svg.Attributes as Svg
 import VirtualDom exposing (attribute)
 
 
@@ -216,7 +218,12 @@ nodeParser =
 -}
 toAttribute : SvgAttribute -> Attribute msg
 toAttribute ( name, value ) =
-    attribute name value
+    if name == "xlink:href" then
+        -- I cannot explain why this helps!
+        Svg.xlinkHref value
+
+    else
+        attribute name value
 
 
 elementToSvg : Element -> Svg msg
@@ -256,6 +263,26 @@ xmlDeclarationParser =
         )
 
 
+{-| Same as parseToNode, but returns a list of all the nodes in the string.
+-}
+parseToNodes : String -> Result String (List SvgNode)
+parseToNodes input =
+    case
+        Combine.runParser
+            (andMapRight
+                (optional "" xmlDeclarationParser)
+                (many nodeParser)
+            )
+            []
+            input
+    of
+        Ok ( _, _, svgNodes ) ->
+            Ok svgNodes
+
+        Err ( _, stream, errors ) ->
+            Err <| String.join " or " errors
+
+
 {-| Parses `String` to `SvgNode`. Normally you will use `parse` instead of this.
 
     parse "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"
@@ -285,18 +312,23 @@ parseToNode input =
 parse : String -> Result String (Html msg)
 parse input =
     let
-        toHtml svgNode =
-            case svgNode of
-                SvgElement element ->
-                    if element.name == "svg" then
-                        Ok <|
-                            svg (List.map toAttribute element.attributes)
-                                (List.map nodeToSvg element.children)
+        toHtml svgNodes =
+            case svgNodes of
+                svgNode :: tl ->
+                    case svgNode of
+                        SvgElement element ->
+                            if element.name == "svg" then
+                                Ok <|
+                                    svg (List.map toAttribute element.attributes)
+                                        (List.map nodeToSvg element.children)
 
-                    else
-                        Err "Top element is not svg"
+                            else
+                                toHtml tl
 
-                _ ->
+                        _ ->
+                            toHtml tl
+
+                [] ->
                     Err "Top element is not svg"
     in
-    parseToNode input |> Result.andThen toHtml
+    parseToNodes input |> Result.andThen toHtml
