@@ -1,7 +1,6 @@
 module SvgParser exposing
     ( SvgNode(..), Element, SvgAttribute
-    , parse, parseToNode, nodeToSvg, toAttribute
-    , parseToNodes
+    , parse, parseToNode, parseToNodes, nodeToSvg, toAttribute
     )
 
 {-| String to SVG parser
@@ -279,7 +278,7 @@ parseToNodes input =
         Ok ( _, _, svgNodes ) ->
             Ok svgNodes
 
-        Err ( _, stream, errors ) ->
+        Err ( _, _, errors ) ->
             Err <| String.join " or " errors
 
 
@@ -303,52 +302,32 @@ parseToNode input =
         Ok ( _, _, svgNode ) ->
             Ok svgNode
 
-        Err ( _, stream, errors ) ->
+        Err ( _, _, errors ) ->
             Err <| String.join " or " errors
 
 
-{-| Same as parseToNode, but returns a list of all the nodes in the string.
--}
-parseToNodes : String -> Result String (List SvgNode)
-parseToNodes input =
-    case
-        Combine.runParser
-            (andMapRight
-                (optional "" xmlDeclarationParser)
-                (many nodeParser)
-            )
-            []
-            input
-    of
-        Ok ( _, _, svgNodes ) ->
-            Ok svgNodes
-
-        Err ( _, stream, errors ) ->
-            Err <| String.join " or " errors
-
-
-{-| Parses `String` to `Html msg`. Usually this is the only function you need.
+{-| Parses `String` to `Html msg`. This function filters top level comments to find the first `<svg>` element.
 -}
 parse : String -> Result String (Html msg)
 parse input =
     let
         toHtml svgNodes =
             case svgNodes of
-                svgNode :: tl ->
-                    case svgNode of
-                        SvgElement element ->
-                            if element.name == "svg" then
-                                Ok <|
-                                    svg (List.map toAttribute element.attributes)
-                                        (List.map nodeToSvg element.children)
+                (SvgElement element) :: tl ->
+                    if element.name == "svg" then
+                        Ok <|
+                            svg (List.map toAttribute element.attributes)
+                                (List.map nodeToSvg element.children)
 
-                            else
-                                toHtml tl
+                    else
+                        -- hd was not valid svg starting point, let's try the next one
+                        toHtml tl
 
-                        _ ->
-                            toHtml tl
+                _ :: tl ->
+                    -- hd was e.g. a Comment, let's try the next one
+                    toHtml tl
 
                 [] ->
-                    Err "Top element is not svg"
+                    Err "No svg found"
     in
     parseToNodes input |> Result.andThen toHtml
