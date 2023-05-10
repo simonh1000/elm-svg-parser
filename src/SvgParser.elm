@@ -307,6 +307,7 @@ parseToNode input =
 
 
 {-| Parses `String` to `Html msg`. This function filters top level comments to find the first `<svg>` element.
+Additional `<svg>` elements are ignored.
 -}
 parse : String -> Result String (Html msg)
 parse input =
